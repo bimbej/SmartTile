@@ -1,0 +1,35 @@
+# Xcode
+*.xcodeproj/
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+xcuserdata/
+*.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+DerivedData/
+*.moved-aside
+*.ips
+*.xcuserstate
+
+# Build
+build/
+*.o
+*.dSYM
+*.dSYM.zip
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Claude Code
+.claude/
+CLAUDE.md
+PROMPT.md
+
+# IDE
+*.code-workspace
+
+# Debug logs (runtime)
+last_llama_output.txt
+last_layout_debug.txt
+last_apply_debug.txt

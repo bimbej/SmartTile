@@ -1,0 +1,32 @@
+name: SmartTile
+options:
+  bundleIdPrefix: pl.bim-it
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+
+targets:
+  SmartTile:
+    type: application
+    platform: macOS
+    sources:
+      - SmartTile
+    postBuildScripts:
+      - script: |
+          tccutil reset Accessibility pl.bim-it.SmartTile 2>/dev/null || true
+        name: Reset Accessibility TCC
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        PRODUCT_BUNDLE_IDENTIFIER: pl.bim-it.SmartTile
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: 1
+        INFOPLIST_FILE: SmartTile/Info.plist
+        CODE_SIGN_ENTITLEMENTS: SmartTile/SmartTile.entitlements
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        ENABLE_HARDENED_RUNTIME: YES
