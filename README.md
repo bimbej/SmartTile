@@ -55,7 +55,7 @@ Unlike traditional tiling window managers that use fixed rules, SmartTile unders
 brew install xcodegen
 
 # Clone and build
-git clone https://github.com/mzdev/SmartTile.git
+git clone https://github.com/bimbej/SmartTile.git
 cd SmartTile
 xcodegen generate
 open SmartTile.xcodeproj
