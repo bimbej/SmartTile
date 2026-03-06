@@ -1,6 +1,6 @@
 import Foundation
 
-/// Layout engine: saved preferences -> local llama.cpp -> grid fallback
+/// Layout engine: learned templates -> local llama.cpp -> grid fallback
 class LayoutEngine {
 
     static let shared = LayoutEngine()
@@ -9,11 +9,20 @@ class LayoutEngine {
     // MARK: - Public API
 
     func suggestLayout(windows: [WindowInfo], screen: ScreenInfo, settings: AppSettings) async throws -> LayoutProposal {
-        // 1. Check saved preferences
-        if let saved = preferenceStore.findMatch(for: windows) {
-            NSLog("SmartTile: Using saved preference (used %dx)", saved.useCount)
-            preferenceStore.incrementUseCount(for: saved.id)
-            return LayoutProposal(windows: saved.layout, reasoning: "Restored from saved preference")
+        // Stop any previous auto-learn observation
+        preferenceStore.stopAutoLearn()
+
+        // 1. Try learned template (matches by window count)
+        if let template = preferenceStore.bestTemplate(for: windows.count) {
+            NSLog("SmartTile: Using learned template for %d windows (used %dx)", windows.count, template.useCount)
+            let placements = PreferenceAnalyzer.applyTemplate(template, to: windows, screen: screen, gap: settings.gapBetweenWindows)
+            let proposal = LayoutProposal(windows: placements, reasoning: "Learned layout for \(windows.count) windows")
+
+            // Start auto-learn to detect corrections
+            DispatchQueue.main.async {
+                self.preferenceStore.startAutoLearn(appliedLayout: placements, windows: windows)
+            }
+            return proposal
         }
 
         // 2. Try local llama.cpp model
@@ -36,10 +45,14 @@ class LayoutEngine {
                     return result
                 }
                 NSLog("SmartTile: Local model returned: %@", proposal.reasoning ?? "no reasoning")
+
+                // Start auto-learn to detect corrections
+                DispatchQueue.main.async {
+                    self.preferenceStore.startAutoLearn(appliedLayout: proposal.windows, windows: windows)
+                }
                 return proposal
             } catch {
                 NSLog("SmartTile: Local model failed: %@", error.localizedDescription)
-                // Fall through to grid
             }
         } else {
             switch localModel.checkStatus() {
@@ -64,6 +77,11 @@ class LayoutEngine {
         }
         let cols = windows.count <= 3 ? windows.count : (windows.count <= 6 ? 3 : 4)
         let grid = gridLayout(windows: windows, screen: screen, columns: cols, gap: settings.gapBetweenWindows)
+
+        // Start auto-learn even for grid fallback
+        DispatchQueue.main.async {
+            self.preferenceStore.startAutoLearn(appliedLayout: grid.windows, windows: windows)
+        }
         return LayoutProposal(windows: grid.windows, reasoning: fallbackReason)
     }
 
@@ -97,16 +115,16 @@ class LayoutEngine {
     // MARK: - Local llama.cpp Inference
 
     private let llamaSystemPrompt = """
-        You are a window layout manager for an ULTRAWIDE monitor. \
+        You are a window layout manager for macOS. \
         Output ONLY valid JSON: {"placements":[{"id":"...","x":0,"y":0,"width":0,"height":0}],"reasoning":"..."}. \
-        CRITICAL: Place windows SIDE BY SIDE horizontally (columns), NOT stacked vertically. \
-        The screen is very wide — divide the width among windows. \
-        Primary windows (editor, browser) get more width. Auxiliary windows (terminal, chat) get less width. \
-        All windows should use the FULL usable height. Never overlap. Leave gaps between windows.
+        Arrange windows to fill the entire screen without overlapping. Leave small gaps between windows. \
+        Editors and browsers should get more space. Terminals and chat windows can be smaller.
         """
 
     private func callLocalLlama(windows: [WindowInfo], screen: ScreenInfo, gap: Double) async throws -> LayoutProposal {
         let prompt = buildPrompt(windows: windows, screen: screen)
+        let promptDebugPath = NSHomeDirectory() + "/Library/Application Support/SmartTile/last_prompt.txt"
+        try? "SYSTEM:\n\(llamaSystemPrompt)\n\nUSER:\n\(prompt)".write(toFile: promptDebugPath, atomically: true, encoding: .utf8)
         let output = try await LocalModelManager.shared.runInference(prompt: prompt, systemPrompt: llamaSystemPrompt)
 
         NSLog("SmartTile: llama output length: %d", output.count)
@@ -150,18 +168,8 @@ class LayoutEngine {
             windowPlacements.append(contentsOf: missingPlacements)
         }
 
-        // Log raw AI placements
-        let debugBefore = windowPlacements.map { "  \($0.windowID): x=\(Int($0.frame.x)) w=\(Int($0.frame.width))" }.joined(separator: "\n")
-        let debugInfo = "Screen: usableW=\(Int(screen.usableWidth)) usableH=\(Int(screen.usableHeight)) originX=\(Int(screen.usableOriginX)) originY=\(Int(screen.usableOriginY))\nRaw AI placements:\n\(debugBefore)"
-        let debugPath = NSHomeDirectory() + "/Library/Application Support/SmartTile/last_layout_debug.txt"
-        try? debugInfo.write(toFile: debugPath, atomically: true, encoding: .utf8)
-
-        // Normalize placements to fill the entire screen (AI often leaves gaps)
+        // Normalize AI output to fill screen
         windowPlacements = normalizeToFillScreen(windowPlacements, screen: screen, gap: gap)
-
-        let debugAfter = windowPlacements.map { "  \($0.windowID): x=\(Int($0.frame.x)) w=\(Int($0.frame.width))" }.joined(separator: "\n")
-        let fullDebug = debugInfo + "\n\nNormalized placements:\n\(debugAfter)"
-        try? fullDebug.write(toFile: debugPath, atomically: true, encoding: .utf8)
 
         return LayoutProposal(windows: windowPlacements, reasoning: response.reasoning ?? "AI layout (local)")
     }
@@ -192,20 +200,14 @@ class LayoutEngine {
         let aspectRatio = screen.usableWidth / screen.usableHeight
         let isUltrawide = aspectRatio > 1.8
 
-        NSLog("SmartTile: Screen %dx%d, usable %dx%d at (%d,%d), aspect=%.1f",
-              Int(screen.width), Int(screen.height),
-              Int(screen.usableWidth), Int(screen.usableHeight),
-              Int(screen.usableOriginX), Int(screen.usableOriginY), aspectRatio)
-
         return """
-        Arrange \(windows.count) windows SIDE BY SIDE (as columns) on \(isUltrawide ? "an ULTRAWIDE" : "a") \(Int(screen.usableWidth))x\(Int(screen.usableHeight)) screen.
+        Arrange \(windows.count) windows on \(isUltrawide ? "an ULTRAWIDE" : "a") \(Int(screen.usableWidth))x\(Int(screen.usableHeight)) screen.
         Origin: x=\(Int(screen.usableOriginX)), y=\(Int(screen.usableOriginY)). Y=0 is top. Gap=8px.
 
         \(windowDescriptions)
 
-        IMPORTANT: Place windows as COLUMNS left to right. Each window spans FULL height (\(Int(screen.usableHeight - 16))px).
-        Divide the \(Int(screen.usableWidth))px width: editors/browsers wider, terminals/chat narrower.
-        Use exact window id values. Output JSON only.
+        Editors and browsers should get more space. Terminals and chat can be smaller.
+        Windows must not overlap and should fill the screen. Use exact window id values. Output JSON only.
         """
     }
 
@@ -213,10 +215,7 @@ class LayoutEngine {
     private func normalizeToFillScreen(_ placements: [WindowPlacement], screen: ScreenInfo, gap: Double) -> [WindowPlacement] {
         guard !placements.isEmpty else { return placements }
 
-        // Sort by x position (left to right)
         let sorted = placements.sorted { $0.frame.x < $1.frame.x }
-
-        // Preserve width ratios from AI but redistribute to fill screen
         let totalAIWidth = sorted.map(\.frame.width).reduce(0, +)
         guard totalAIWidth > 0 else { return placements }
 
@@ -231,7 +230,6 @@ class LayoutEngine {
             let ratio = p.frame.width / totalAIWidth
             let newWidth: Double
             if i == sorted.count - 1 {
-                // Last window takes remaining space to avoid rounding gaps
                 newWidth = screen.usableOriginX + screen.usableWidth - gap - currentX
             } else {
                 newWidth = availableWidth * ratio

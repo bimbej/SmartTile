@@ -48,30 +48,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(withTitle: "Smart Arrange", action: #selector(menuSmartArrange), keyEquivalent: "")
         menu.addItem(withTitle: "Grid Tile Window", action: #selector(menuGridTile), keyEquivalent: "")
-        menu.addItem(withTitle: "Save Current Layout", action: #selector(menuSaveLayout), keyEquivalent: "")
-        menu.addItem(.separator())
-
-        let quickLayout = NSMenu()
-        quickLayout.addItem(withTitle: "2 columns", action: #selector(menuGrid2), keyEquivalent: "")
-        quickLayout.addItem(withTitle: "3 columns", action: #selector(menuGrid3), keyEquivalent: "")
-        quickLayout.addItem(withTitle: "4 columns", action: #selector(menuGrid4), keyEquivalent: "")
-        quickLayout.addItem(.separator())
-        quickLayout.addItem(withTitle: "Left 2/3 + Right 1/3", action: #selector(menuSplit67), keyEquivalent: "")
-        quickLayout.addItem(withTitle: "Left 1/3 + Right 2/3", action: #selector(menuSplit33), keyEquivalent: "")
-        quickLayout.addItem(withTitle: "Left 1/2 + Right 1/2", action: #selector(menuSplit50), keyEquivalent: "")
-
-        let quickItem = NSMenuItem(title: "Quick Layout", action: nil, keyEquivalent: "")
-        quickItem.submenu = quickLayout
-        menu.addItem(quickItem)
-
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings...", action: #selector(menuShowSettings), keyEquivalent: "")
         menu.addItem(withTitle: "Quit SmartTile", action: #selector(menuQuit), keyEquivalent: "q")
 
         for item in menu.items where item.action != nil {
-            item.target = self
-        }
-        for item in quickLayout.items where item.action != nil {
             item.target = self
         }
 
@@ -80,13 +61,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func menuSmartArrange() { performAutoArrange() }
     @objc private func menuGridTile() { OverlayWindowController.shared.showForFrontWindow() }
-    @objc private func menuSaveLayout() { saveCurrentLayout() }
-    @objc private func menuGrid2() { quickGrid(columns: 2) }
-    @objc private func menuGrid3() { quickGrid(columns: 3) }
-    @objc private func menuGrid4() { quickGrid(columns: 4) }
-    @objc private func menuSplit67() { quickSplit(mainRatio: 0.667) }
-    @objc private func menuSplit33() { quickSplit(mainRatio: 0.333) }
-    @objc private func menuSplit50() { quickSplit(mainRatio: 0.5) }
     @objc private func menuShowSettings() { showSettings() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
 
@@ -143,9 +117,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hk.register(action: .grid, combo: hk.combo(for: .grid)) {
             OverlayWindowController.shared.showForFrontWindow()
         }
-        hk.register(action: .save, combo: hk.combo(for: .save)) { [weak self] in
-            self?.saveCurrentLayout()
-        }
     }
 
     func performAutoArrange() {
@@ -180,9 +151,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
 
                 WindowManager.shared.applyLayout(proposal.windows, windows: windows)
-                let reasoning = proposal.reasoning ?? "Layout applied"
-                appState.lastResult = reasoning
-                ToastController.shared.show("\(windows.count) windows: \(reasoning)", icon: "checkmark.circle.fill")
+                appState.lastResult = proposal.reasoning ?? "Layout applied"
+                // Show concise toast — don't show AI reasoning (often inaccurate)
+                let source: String
+                if proposal.reasoning?.contains("Learned") == true {
+                    source = "from learned preferences"
+                } else if proposal.reasoning?.contains("Grid") == true {
+                    source = "grid layout"
+                } else {
+                    source = "arranged by AI"
+                }
+                ToastController.shared.show("\(windows.count) windows \(source)", icon: "checkmark.circle.fill")
             } catch {
                 ToastController.shared.show("Error: \(error.localizedDescription)", icon: "exclamationmark.triangle.fill")
                 let cols = windows.count <= 3 ? windows.count : 3
@@ -211,62 +190,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             WindowPlacement(windowID: w.id, frame: w.frame)
         }
 
-        PreferenceStore.shared.savePreference(windows: windows, layout: placements)
+        let screen = ScreenInfo.current()
+        PreferenceStore.shared.learnLayout(windows: windows, layout: placements, screen: screen)
         appState.lastResult = "Layout saved for \(windows.count) windows"
         ToastController.shared.show("Layout saved for \(windows.count) windows", icon: "checkmark.circle.fill")
-    }
-
-    func quickGrid(columns: Int) {
-        let windows = WindowManager.shared.getVisibleWindows()
-        let screen = ScreenInfo.current()
-        let layout = LayoutEngine.shared.gridLayout(
-            windows: windows, screen: screen,
-            columns: columns, gap: appState.settings.gapBetweenWindows
-        )
-        WindowManager.shared.applyLayout(layout.windows, windows: windows)
-        appState.lastResult = "Grid: \(columns) columns"
-    }
-
-    func quickSplit(mainRatio: Double) {
-        let windows = WindowManager.shared.getVisibleWindows()
-        guard windows.count >= 2 else {
-            quickGrid(columns: 1)
-            return
-        }
-
-        let screen = ScreenInfo.current()
-        let gap = appState.settings.gapBetweenWindows
-
-        let mainWidth = (screen.usableWidth - gap * 3) * mainRatio
-        let sideWidth = screen.usableWidth - mainWidth - gap * 3
-        let sideHeight = (screen.usableHeight - gap * Double(windows.count)) / Double(windows.count - 1)
-
-        var placements: [WindowPlacement] = []
-
-        placements.append(WindowPlacement(
-            windowID: windows[0].id,
-            frame: WindowFrame(
-                x: screen.usableOriginX + gap,
-                y: screen.usableOriginY + gap,
-                width: mainWidth,
-                height: screen.usableHeight - gap * 2
-            )
-        ))
-
-        for (i, window) in windows.dropFirst().enumerated() {
-            placements.append(WindowPlacement(
-                windowID: window.id,
-                frame: WindowFrame(
-                    x: screen.usableOriginX + mainWidth + gap * 2,
-                    y: screen.usableOriginY + gap + Double(i) * (sideHeight + gap),
-                    width: sideWidth,
-                    height: sideHeight - gap
-                )
-            ))
-        }
-
-        WindowManager.shared.applyLayout(placements, windows: windows)
-        appState.lastResult = "Split: \(Int(mainRatio * 100))% / \(Int((1 - mainRatio) * 100))%"
     }
 
     func showSettings() {
@@ -283,11 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.appState.settings = newValue
                     newValue.save()
                 }
-            ),
-            preferenceCount: PreferenceStore.shared.count,
-            onClearPreferences: {
-                PreferenceStore.shared.clearAll()
-            }
+            )
         )
 
         let hostingView = NSHostingView(rootView: settingsView)

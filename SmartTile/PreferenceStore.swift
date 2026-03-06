@@ -1,121 +1,166 @@
 import Foundation
 
-/// Stores and retrieves user layout preferences, learning from corrections
+/// Stores layout templates learned from user behavior.
+/// Templates are abstract (relative slots keyed by window count), not tied to specific apps.
 class PreferenceStore {
-    
+
     static let shared = PreferenceStore()
-    
-    private var preferences: [UserPreference] = []
+
+    private(set) var templates: [PreferenceAnalyzer.LayoutTemplate] = []
     private let storageURL: URL
-    
+
+    // Auto-learn state (not persisted)
+    private var lastAppliedLayout: [WindowPlacement]?
+    private var lastAppliedWindows: [WindowInfo]?
+    private var autoLearnTimer: Timer?
+
     init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("SmartTile")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        storageURL = dir.appendingPathComponent("preferences.json")
+        storageURL = dir.appendingPathComponent("templates.json")
         load()
     }
-    
-    // MARK: - Matching
-    
-    /// Find a saved preference that matches the current window combination
-    func findMatch(for windows: [WindowInfo]) -> UserPreference? {
-        let currentCategories = windows.map { $0.category.rawValue }.sorted()
-        let currentBundles = windows.map { $0.bundleID }.sorted()
-        
-        // First try exact bundle ID match
-        if let exact = preferences.first(where: {
-            $0.appCombination.sorted() == currentBundles && $0.useCount >= 1
-        }) {
-            return exact
-        }
-        
-        // Then try category match (more flexible)
-        if let categoryMatch = preferences
-            .filter({ $0.categoryCombo.sorted() == currentCategories && $0.useCount >= 2 })
-            .sorted(by: { $0.useCount > $1.useCount })
-            .first {
-            return categoryMatch
-        }
-        
-        return nil
+
+    // MARK: - Template Matching
+
+    /// Find the best template for the given number of windows.
+    func bestTemplate(for windowCount: Int) -> PreferenceAnalyzer.LayoutTemplate? {
+        PreferenceAnalyzer.bestTemplate(for: windowCount, from: templates)
     }
-    
+
     // MARK: - Learning
-    
-    /// Save a layout as user preference (called after manual correction)
-    func savePreference(windows: [WindowInfo], layout: [WindowPlacement]) {
-        let bundles = windows.map { $0.bundleID }.sorted()
-        let categories = windows.map { $0.category.rawValue }.sorted()
-        let id = bundles.joined(separator: "+").hashValue.description
-        
-        // Update existing or create new
-        if let index = preferences.firstIndex(where: { $0.id == id }) {
-            preferences[index] = UserPreference(
-                id: id,
-                appCombination: bundles,
-                categoryCombo: categories,
-                layout: layout,
-                timestamp: Date(),
-                useCount: preferences[index].useCount + 1
-            )
+
+    /// Save a layout as a template (extracts abstract slots from concrete positions).
+    func learnLayout(windows: [WindowInfo], layout: [WindowPlacement], screen: ScreenInfo) {
+        // Map each placement to its category
+        let categories: [WindowCategory] = layout.map { placement in
+            if let window = windows.first(where: { $0.id == placement.windowID }) {
+                return window.category
+            }
+            return .other
+        }
+
+        let newTemplate = PreferenceAnalyzer.extractTemplate(from: layout, categories: categories, screen: screen)
+
+        // Check if we already have a similar template — merge category stats
+        if let existingIdx = templates.firstIndex(where: {
+            PreferenceAnalyzer.areSimilar($0, newTemplate)
+        }) {
+            PreferenceAnalyzer.mergeCategories(existing: &templates[existingIdx], new: newTemplate)
         } else {
-            preferences.append(UserPreference(
-                id: id,
-                appCombination: bundles,
-                categoryCombo: categories,
-                layout: layout,
-                timestamp: Date(),
-                useCount: 1
-            ))
+            templates.append(newTemplate)
         }
-        
+
         save()
-        print("💾 Saved layout preference for: \(categories.joined(separator: " + "))")
+        NSLog("SmartTile: Learned template for %d windows (total: %d templates)", windows.count, templates.count)
     }
-    
-    /// Record that a saved preference was used
-    func incrementUseCount(for id: String) {
-        if let index = preferences.firstIndex(where: { $0.id == id }) {
-            preferences[index].useCount += 1
-            save()
+
+    // MARK: - Auto-Learn
+
+    /// Start observing for user corrections after Smart Arrange.
+    func startAutoLearn(appliedLayout: [WindowPlacement], windows: [WindowInfo]) {
+        lastAppliedLayout = appliedLayout
+        lastAppliedWindows = windows
+        stopAutoLearn()
+
+        var stableCount = 0
+        var lastPositions: [WindowFrame]?
+
+        // Poll every 5 seconds for up to 2 minutes
+        autoLearnTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] timer in
+            guard let self, let originalLayout = self.lastAppliedLayout,
+                  let originalWindows = self.lastAppliedWindows else {
+                timer.invalidate()
+                return
+            }
+
+            let currentWindows = WindowManager.shared.getVisibleWindows()
+            let currentPositions = currentWindows.map(\.frame)
+
+            // Check if positions are stable (same as last poll)
+            if let last = lastPositions, Self.framesEqual(currentPositions, last, tolerance: 10) {
+                stableCount += 1
+            } else {
+                stableCount = 0
+            }
+            lastPositions = currentPositions
+
+            // Stable for 2 consecutive polls (10 seconds) — user is done adjusting
+            if stableCount >= 2 {
+                timer.invalidate()
+
+                // Did the user actually change anything?
+                let originalFrames = originalLayout.map(\.frame)
+                let changed = !Self.framesEqual(originalFrames, currentPositions, tolerance: 20)
+
+                if changed {
+                    // User corrected the layout — learn from it
+                    let correctedPlacements = currentWindows.map {
+                        WindowPlacement(windowID: $0.id, frame: $0.frame)
+                    }
+                    let screen = ScreenInfo.current()
+                    self.learnLayout(windows: currentWindows, layout: correctedPlacements, screen: screen)
+                    DispatchQueue.main.async {
+                        ToastController.shared.show("Layout learned", icon: "brain.head.profile", duration: 2)
+                    }
+                } else {
+                    // User accepted our layout — also learn it as positive reinforcement
+                    let screen = ScreenInfo.current()
+                    self.learnLayout(windows: originalWindows, layout: originalLayout, screen: screen)
+                }
+
+                self.lastAppliedLayout = nil
+                self.lastAppliedWindows = nil
+            }
         }
     }
-    
-    /// Get recent preferences for LLM context
-    func getRecentPreferences(limit: Int) -> [UserPreference] {
-        return Array(preferences
-            .sorted(by: { $0.timestamp > $1.timestamp })
-            .prefix(limit))
+
+    /// Stop auto-learn polling (e.g., when user triggers another Smart Arrange).
+    func stopAutoLearn() {
+        autoLearnTimer?.invalidate()
+        autoLearnTimer = nil
     }
-    
-    /// Clear all preferences
+
+    // MARK: - Helpers
+
+    /// Compare two frame arrays with tolerance.
+    private static func framesEqual(_ a: [WindowFrame], _ b: [WindowFrame], tolerance: Double) -> Bool {
+        guard a.count == b.count else { return false }
+        let sortedA = a.sorted { $0.x + $0.y * 10000 < $1.x + $1.y * 10000 }
+        let sortedB = b.sorted { $0.x + $0.y * 10000 < $1.x + $1.y * 10000 }
+        for (fa, fb) in zip(sortedA, sortedB) {
+            if abs(fa.x - fb.x) > tolerance || abs(fa.y - fb.y) > tolerance ||
+               abs(fa.width - fb.width) > tolerance || abs(fa.height - fb.height) > tolerance {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// Clear all templates
     func clearAll() {
-        preferences = []
+        templates = []
         save()
     }
-    
-    /// Get number of saved preferences
-    var count: Int { preferences.count }
-    
+
+    var count: Int { templates.count }
+
     // MARK: - Persistence
-    
+
     private func save() {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = .prettyPrinted
-        if let data = try? encoder.encode(preferences) {
+        if let data = try? encoder.encode(templates) {
             try? data.write(to: storageURL)
         }
     }
-    
+
     private func load() {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
         if let data = try? Data(contentsOf: storageURL),
-           let loaded = try? decoder.decode([UserPreference].self, from: data) {
-            preferences = loaded
-            print("📂 Loaded \(preferences.count) layout preferences")
+           let loaded = try? JSONDecoder().decode([PreferenceAnalyzer.LayoutTemplate].self, from: data) {
+            templates = loaded
+            NSLog("SmartTile: Loaded %d layout templates", templates.count)
         }
     }
 }

@@ -2,14 +2,15 @@
 
 **AI-powered window manager for macOS.** SmartTile uses a local LLM to analyze your open windows and arrange them intelligently — no cloud, no subscription, completely free.
 
-Unlike traditional tiling window managers that use fixed rules, SmartTile understands *what* your windows are (editor, browser, terminal, chat) and arranges them accordingly. It can also remember layouts you save for specific app combinations.
+Unlike traditional tiling window managers that use fixed rules, SmartTile understands *what* your windows are (editor, browser, terminal, chat) and arranges them accordingly. It learns your preferred layouts automatically — no manual saving needed.
 
 ## Features
 
 - **Smart Arrange** — AI analyzes your open windows and suggests an optimal layout based on window types and screen size
-- **Layout Memory** — save your preferred layout for a specific set of apps; next time the exact same apps are open, the saved layout is restored instantly without calling AI
+- **Auto-Learn** — SmartTile watches how you adjust windows after arranging and remembers your preferred layouts automatically
+- **Layout Templates** — learns abstract layout patterns (not per-app positions), so a "2 columns 50/50" layout works regardless of which specific apps are open
+- **Category-Aware Placement** — tracks which types of apps you put where (e.g., editor always on the left, terminal on the right) and reproduces that across sessions
 - **Grid Overlay** — Divvy-style interactive grid for precise manual window placement
-- **Quick Layouts** — one-click presets from the menu: 2/3/4 column grids, 1/2 + 1/2, 2/3 + 1/3, 1/3 + 2/3 splits
 - **Local AI** — runs entirely on your Mac using [llama.cpp](https://github.com/ggerganov/llama.cpp) with a small quantized model (~1 GB)
 - **Menu bar app** — lives in the menu bar, no dock icon, zero clutter
 - **Zero dependencies** — pure Swift/AppKit, no external frameworks
@@ -18,15 +19,15 @@ Unlike traditional tiling window managers that use fixed rules, SmartTile unders
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Detect      │────>│  Classify     │────>│  Check saved  │
-│  windows     │     │  (editor,     │     │  layouts      │
+│  Detect      │────>│  Classify     │────>│  Check learned│
+│  windows     │     │  (editor,     │     │  templates    │
 │  (AXUIElement)│     │   terminal…) │     │              │
 └─────────────┘     └──────────────┘     └──────┬───────┘
                                                 │
                                     ┌───────────┴───────────┐
                                     │                       │
-                              Found saved              No match
-                              layout                       │
+                              Found learned            No match
+                              template                      │
                                     │                       v
                                     │              ┌──────────────┐
                                     │              │  Local LLM    │
@@ -36,6 +37,12 @@ Unlike traditional tiling window managers that use fixed rules, SmartTile unders
                                     v                     v
                               ┌──────────────────────────────┐
                               │  Apply layout via AXUIElement │
+                              └──────────────┬───────────────┘
+                                             │
+                                             v
+                              ┌──────────────────────────────┐
+                              │  Auto-learn: watch for user   │
+                              │  corrections, save template   │
                               └──────────────────────────────┘
 ```
 
@@ -75,7 +82,7 @@ brew install llama.cpp
 
 On first launch, macOS will ask for **Accessibility** permission:
 
-> System Settings → Privacy & Security → Accessibility → SmartTile ✓
+> System Settings > Privacy & Security > Accessibility > SmartTile
 
 This is required to discover and move windows.
 
@@ -85,15 +92,25 @@ This is required to discover and move windows.
 |----------|--------|
 | `Ctrl+Option+A` | **Smart Arrange** — AI arranges all visible windows |
 | `Ctrl+Option+G` | **Grid Tile** — show grid overlay for the frontmost window |
-| `Ctrl+Option+S` | **Save Layout** — save current window positions for this app combination |
 
 ### Typical Workflow
 
-1. Open your usual apps (editor, browser, terminal…)
-2. Press `Ctrl+Option+A` — SmartTile arranges them using AI
-3. Not happy with the result? Adjust windows manually
-4. Press `Ctrl+Option+S` to save your preferred layout
-5. Next time the **same apps** are open, SmartTile restores your saved layout without calling AI
+1. Open your usual apps (editor, browser, terminal...)
+2. Press `Ctrl+Option+A` — SmartTile arranges them
+3. Not happy? Adjust windows manually — **SmartTile learns automatically**
+4. Next time you have the same number of windows, your preferred layout is restored
+
+No manual saving needed. SmartTile detects when you correct a layout and remembers the pattern.
+
+### How Learning Works
+
+SmartTile learns **layout patterns**, not per-app positions:
+
+- After Smart Arrange, it watches for ~30 seconds to see if you move any windows
+- If you adjust the layout, it saves the corrected arrangement as a template
+- Templates are keyed by window count (e.g., "my preferred 3-window layout")
+- Each slot in a template tracks which categories of apps go there
+- Over time, editors consistently land in the big slot, terminals in the small one, etc.
 
 ### Grid Overlay
 
@@ -104,32 +121,24 @@ Press `Ctrl+Option+G` to open an interactive grid over your screen:
 - Quick presets at the bottom: Full, Half, Third, Two-thirds
 - Press `Esc` to dismiss
 
-### Quick Layouts
-
-Available from the menu bar under **Quick Layout**:
-
-- 2 / 3 / 4 equal columns
-- Left 2/3 + Right 1/3
-- Left 1/3 + Right 2/3
-- Left 1/2 + Right 1/2
-
 ## Project Structure
 
 ```
 SmartTile/
-├── SmartTileApp.swift       # Entry point, NSStatusItem menu, global shortcuts
-├── Models.swift             # Data structures, window categories
-├── WindowManager.swift      # AXUIElement window discovery & manipulation
-├── LayoutEngine.swift       # LLM integration + grid fallback + normalization
-├── LocalModelManager.swift  # llama.cpp process management & model download
-├── PreferenceStore.swift    # Saved layout storage (exact app combination match)
-├── OverlayView.swift        # Grid overlay UI
-├── SettingsView.swift       # Settings window
-├── ToastView.swift          # Notification toasts (pure AppKit)
-├── HotkeyManager.swift      # Global keyboard shortcut registration
-├── KeyRecorderView.swift    # Custom hotkey recorder
-├── Info.plist               # LSUIElement = true (menu bar only)
-└── SmartTile.entitlements   # No sandbox + network access
+├── SmartTileApp.swift        # Entry point, NSStatusItem menu, global shortcuts
+├── Models.swift              # Data structures, window categories
+├── WindowManager.swift       # AXUIElement window discovery & manipulation
+├── LayoutEngine.swift        # Learned templates → LLM → grid fallback
+├── PreferenceAnalyzer.swift  # Template extraction, matching, slot assignment
+├── PreferenceStore.swift     # Template persistence + auto-learn polling
+├── LocalModelManager.swift   # llama.cpp process management & model download
+├── OverlayView.swift         # Grid overlay UI
+├── SettingsView.swift        # Settings window
+├── ToastView.swift           # Notification toasts (pure AppKit)
+├── HotkeyManager.swift       # Global keyboard shortcut registration
+├── KeyRecorderView.swift     # Custom hotkey recorder
+├── Info.plist                # LSUIElement = true (menu bar only)
+└── SmartTile.entitlements    # No sandbox + network access
 ```
 
 ## How the AI Works
@@ -138,9 +147,9 @@ SmartTile runs a small language model (Qwen 2.5 1.5B, ~1 GB) locally via `llama-
 
 - List of open windows with their app names and categories
 - Screen dimensions and usable area
-- Instructions to arrange windows as columns, respecting window types
+- Instructions to arrange windows optimally, respecting window types
 
-The model's output is post-processed to ensure windows fill the entire screen width, preserving the AI's relative width proportions.
+The model's output is post-processed to ensure windows fill the entire screen. Over time, the AI is used less and less as SmartTile learns your preferences.
 
 **No data leaves your computer.** The AI runs entirely locally.
 
@@ -151,7 +160,7 @@ All data is stored locally in `~/Library/Application Support/SmartTile/`:
 | File | Purpose |
 |------|---------|
 | `settings.json` | App configuration |
-| `preferences.json` | Saved layouts for specific app combinations |
+| `templates.json` | Learned layout templates |
 
 ## Contributing
 
@@ -159,4 +168,4 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## License
 
-[MIT](LICENSE) — Michal Zielinski © 2026
+[MIT](LICENSE) — Bim-IT Michal Zielinski © 2026

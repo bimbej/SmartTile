@@ -44,10 +44,22 @@ class WindowManager {
                 ) else { continue }
 
                 // Skip minimized and tiny windows (floating panels, etc.)
-                if !windowInfo.isMinimized && windowInfo.frame.width > 100 && windowInfo.frame.height > 100 {
-                    windows.append(windowInfo)
-                    windowIndex += 1
+                guard !windowInfo.isMinimized && windowInfo.frame.width > 100 && windowInfo.frame.height > 100 else {
+                    continue
                 }
+
+                // Skip Finder's desktop window (covers entire screen, starts at y=0)
+                if windowInfo.bundleID == "com.apple.finder" {
+                    let screen = NSScreen.main?.frame ?? .zero
+                    if windowInfo.frame.width >= Double(screen.width) - 10 &&
+                       windowInfo.frame.height >= Double(screen.height) - 10 &&
+                       windowInfo.frame.y <= 1 {
+                        continue
+                    }
+                }
+
+                windows.append(windowInfo)
+                windowIndex += 1
             }
         }
         

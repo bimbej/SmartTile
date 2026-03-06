@@ -203,17 +203,6 @@ struct ScreenInfo: Codable {
     }
 }
 
-// MARK: - User Preferences
-
-struct UserPreference: Codable, Identifiable {
-    let id: String // hash of sorted app categories
-    let appCombination: [String] // sorted bundle IDs
-    let categoryCombo: [String] // sorted categories
-    let layout: [WindowPlacement]
-    let timestamp: Date
-    var useCount: Int
-}
-
 // MARK: - Settings
 
 struct AppSettings: Codable {

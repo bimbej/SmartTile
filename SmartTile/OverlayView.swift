@@ -220,10 +220,7 @@ struct GridOverlayView: View {
                             .onEnded { _ in
                                 if let start = dragStart, let end = dragEnd {
                                     let frame = selectionToFrame(
-                                        start: start, end: end,
-                                        cellWidth: cellWidth, cellHeight: cellHeight,
-                                        totalWidth: geometry.size.width,
-                                        totalHeight: geometry.size.height
+                                        start: start, end: end
                                     )
                                     // Defer to escape the gesture handler's stack frame
                                     DispatchQueue.main.async {
@@ -282,23 +279,19 @@ struct GridOverlayView: View {
         return cell.col >= minCol && cell.col <= maxCol && cell.row >= minRow && cell.row <= maxRow
     }
     
-    private func selectionToFrame(start: GridCell, end: GridCell,
-                                   cellWidth: CGFloat, cellHeight: CGFloat,
-                                   totalWidth: CGFloat, totalHeight: CGFloat) -> WindowFrame {
+    private func selectionToFrame(start: GridCell, end: GridCell) -> WindowFrame {
         let gap = 8.0
         let minCol = min(start.col, end.col)
         let maxCol = max(start.col, end.col)
         let minRow = min(start.row, end.row)
         let maxRow = max(start.row, end.row)
-        
-        let ratioX = screenInfo.usableWidth / Double(totalWidth)
-        let ratioY = screenInfo.usableHeight / Double(totalHeight)
-        
-        let x = screenInfo.usableOriginX + Double(minCol) * Double(cellWidth) * ratioX + gap
-        let y = screenInfo.usableOriginY + Double(minRow) * Double(cellHeight) * ratioY + gap
-        let w = Double(maxCol - minCol + 1) * Double(cellWidth) * ratioX - gap * 2
-        let h = Double(maxRow - minRow + 1) * Double(cellHeight) * ratioY - gap * 2
-        
+
+        // Map grid cell fractions directly to usable screen area
+        let x = screenInfo.usableOriginX + Double(minCol) / Double(columns) * screenInfo.usableWidth + gap
+        let y = screenInfo.usableOriginY + Double(minRow) / Double(rows) * screenInfo.usableHeight + gap
+        let w = Double(maxCol - minCol + 1) / Double(columns) * screenInfo.usableWidth - gap * 2
+        let h = Double(maxRow - minRow + 1) / Double(rows) * screenInfo.usableHeight - gap * 2
+
         return WindowFrame(x: x, y: y, width: w, height: h)
     }
     
