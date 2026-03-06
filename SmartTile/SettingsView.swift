@@ -3,21 +3,15 @@ import ServiceManagement
 
 struct SettingsView: View {
     @Binding var settings: AppSettings
-    @State private var preferenceCount: Int
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
-    let onClearPreferences: () -> Void
 
     @State private var arrangeCombo: HotkeyManager.KeyCombo
     @State private var gridCombo: HotkeyManager.KeyCombo
-    @State private var saveCombo: HotkeyManager.KeyCombo
 
-    init(settings: Binding<AppSettings>, preferenceCount: Int, onClearPreferences: @escaping () -> Void) {
+    init(settings: Binding<AppSettings>) {
         self._settings = settings
-        self._preferenceCount = State(initialValue: preferenceCount)
-        self.onClearPreferences = onClearPreferences
         self._arrangeCombo = State(initialValue: HotkeyManager.shared.combo(for: .arrange))
         self._gridCombo = State(initialValue: HotkeyManager.shared.combo(for: .grid))
-        self._saveCombo = State(initialValue: HotkeyManager.shared.combo(for: .save))
     }
 
     @State private var selectedTab = 0
@@ -31,7 +25,6 @@ struct SettingsView: View {
             HStack(spacing: 2) {
                 tabButton(title: "General", icon: "gear", index: 0)
                 tabButton(title: "AI Model", icon: "cpu", index: 2)
-                tabButton(title: "Learned Layouts", icon: "brain.head.profile", index: 1)
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
@@ -43,7 +36,6 @@ struct SettingsView: View {
             ScrollView {
                 switch selectedTab {
                 case 0: generalContent
-                case 1: preferencesContent
                 case 2: modelContent
                 default: generalContent
                 }
@@ -92,7 +84,6 @@ struct SettingsView: View {
                 VStack(spacing: 8) {
                     shortcutRow("Smart Arrange", action: .arrange, combo: $arrangeCombo)
                     shortcutRow("Grid Tile Window", action: .grid, combo: $gridCombo)
-                    shortcutRow("Save Layout", action: .save, combo: $saveCombo)
                 }
                 Text("Click a shortcut, then press your desired key combination")
                     .font(.caption)
@@ -125,53 +116,18 @@ struct SettingsView: View {
                 Text("AI-powered window manager for ultrawide monitors")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Divider()
+                HStack {
+                    Text("Bim-IT Micha\u{0142} Zieli\u{0144}ski")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Link("bim-it.pl", destination: URL(string: "https://www.bim-it.pl")!)
+                        .font(.caption)
+                }
             }
         }
         .padding(20)
-    }
-
-    // MARK: - Preferences
-
-    private var preferencesContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            settingsSection("Saved Layouts") {
-                HStack(spacing: 12) {
-                    Image(systemName: "brain.head.profile")
-                        .font(.title2)
-                        .foregroundStyle(.blue)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(preferenceCount) saved layout(s)")
-                            .fontWeight(.semibold)
-                        Text("SmartTile learns from your corrections and remembers preferred arrangements.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            settingsSection("How it works") {
-                VStack(alignment: .leading, spacing: 8) {
-                    stepRow(number: 1, text: "AI suggests a layout for your open windows")
-                    stepRow(number: 2, text: "You adjust windows manually if needed")
-                    stepRow(number: 3, text: "Press ⌃⌥S to save current layout")
-                    stepRow(number: 4, text: "Next time, your preferred layout is restored")
-                }
-            }
-
-            settingsSection("") {
-                Button(role: .destructive) {
-                    onClearPreferences()
-                    preferenceCount = 0
-                } label: {
-                    Label("Clear All Learned Layouts", systemImage: "trash")
-                }
-                .disabled(preferenceCount == 0)
-            }
-        }
-        .padding(20)
-        .onAppear {
-            preferenceCount = PreferenceStore.shared.count
-        }
     }
 
     // MARK: - AI Model
