@@ -2,7 +2,7 @@
 
 **AI-powered window manager for macOS.** SmartTile uses a local LLM to analyze your open windows and arrange them intelligently — no cloud, no subscription, completely free.
 
-Unlike traditional tiling window managers that use fixed rules, SmartTile understands *what* your windows are (editor, browser, terminal, chat) and arranges them accordingly. It learns your preferred layouts automatically — no manual saving needed.
+Unlike traditional tiling window managers that use fixed rules, SmartTile understands *what* your windows are (editor, browser, terminal, cha, other..) and arranges them accordingly. It learns your preferred layouts automatically — no manual saving needed.
 
 ## Features
 
@@ -18,31 +18,31 @@ Unlike traditional tiling window managers that use fixed rules, SmartTile unders
 ## How It Works
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Detect      │────>│  Classify     │────>│  Check learned│
-│  windows     │     │  (editor,     │     │  templates    │
-│  (AXUIElement)│     │   terminal…) │     │              │
-└─────────────┘     └──────────────┘     └──────┬───────┘
-                                                │
-                                    ┌───────────┴───────────┐
+┌────────────────┐     ┌──────────────┐     ┌─────────────────┐
+│  Detect        │────>│  Classify    │────>│  Check learned  │
+│  windows       │     │  (editor,    │     │  templates      │
+│  (AXUIElement) │     │   terminal…) │     │                 │
+└────────────────┘     └──────────────┘     └──────┬──────────┘
+                                                   │
+                                    ┌──────────────┴────────┐
                                     │                       │
                               Found learned            No match
                               template                      │
                                     │                       v
                                     │              ┌──────────────┐
-                                    │              │  Local LLM    │
-                                    │              │  (llama.cpp)  │
+                                    │              │  Local LLM   │
+                                    │              │  (llama.cpp) │
                                     │              └──────┬───────┘
                                     │                     │
                                     v                     v
                               ┌──────────────────────────────┐
-                              │  Apply layout via AXUIElement │
+                              │ Apply layout via AXUIElement │
                               └──────────────┬───────────────┘
                                              │
                                              v
                               ┌──────────────────────────────┐
-                              │  Auto-learn: watch for user   │
-                              │  corrections, save template   │
+                              │  Auto-learn: watch for user  │
+                              │  corrections, save template  │
                               └──────────────────────────────┘
 ```
 
