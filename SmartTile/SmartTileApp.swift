@@ -34,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+
+        UpdateChecker.shared.checkForUpdates(silent: true)
     }
 
     // MARK: - Status Bar Menu
@@ -49,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Smart Arrange", action: #selector(menuSmartArrange), keyEquivalent: "")
         menu.addItem(withTitle: "Grid Tile Window", action: #selector(menuGridTile), keyEquivalent: "")
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Check for Updates...", action: #selector(menuCheckUpdates), keyEquivalent: "")
         menu.addItem(withTitle: "Settings...", action: #selector(menuShowSettings), keyEquivalent: "")
         menu.addItem(withTitle: "Quit SmartTile", action: #selector(menuQuit), keyEquivalent: "q")
 
@@ -61,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func menuSmartArrange() { performAutoArrange() }
     @objc private func menuGridTile() { OverlayWindowController.shared.showForFrontWindow() }
+    @objc private func menuCheckUpdates() { UpdateChecker.shared.checkForUpdates(silent: false) }
     @objc private func menuShowSettings() { showSettings() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
 
@@ -122,7 +126,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func performAutoArrange() {
         guard appState.hasAccessibility else {
             appState.lastResult = "Grant Accessibility permission first"
-            ToastController.shared.show("No Accessibility permission", icon: "lock.fill")
+            ToastController.shared.show("Grant Accessibility permission in System Settings", icon: "lock.fill")
+            WindowManager.requestAccessibilityPermission()
             return
         }
         guard !appState.isArranging else { return }

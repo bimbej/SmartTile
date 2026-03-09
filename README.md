@@ -9,9 +9,9 @@ Unlike traditional tiling window managers that use fixed rules, SmartTile unders
 - **Smart Arrange** — AI analyzes your open windows and suggests an optimal layout based on window types and screen size
 - **Auto-Learn** — SmartTile watches how you adjust windows after arranging and remembers your preferred layouts automatically
 - **Layout Templates** — learns abstract layout patterns (not per-app positions), so a "2 columns 50/50" layout works regardless of which specific apps are open
-- **Category-Aware Placement** — tracks which types of apps you put where (e.g., editor always on the left, terminal on the right) and reproduces that across sessions
-- **Grid Overlay** — Divvy-style interactive grid for precise manual window placement
+- **Grid Overlay** — interactive full-screen grid for precise manual window placement, with quick presets (halves, quarters, full)
 - **Local AI** — runs entirely on your Mac using [llama.cpp](https://github.com/ggerganov/llama.cpp) with a small quantized model (~1 GB)
+- **Auto-Update** — checks GitHub for new releases on startup, downloads and installs updates with one click
 - **Menu bar app** — lives in the menu bar, no dock icon, zero clutter
 - **Zero dependencies** — pure Swift/AppKit, no external frameworks
 
@@ -48,25 +48,23 @@ Unlike traditional tiling window managers that use fixed rules, SmartTile unders
 
 ## Installation
 
-### Prerequisites
+### Download
 
-- macOS 14.0+ (Sonoma or later)
-- Xcode 15+ (for building from source)
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen)
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) (for AI features — grid layout works without it)
+Download the latest DMG from [GitHub Releases](https://github.com/bimbej/SmartTile/releases/latest), open it, and drag SmartTile to your Applications folder.
+
+SmartTile checks for updates automatically on launch. You can also check manually via the menu bar: **SmartTile > Check for Updates...**
 
 ### Build from Source
 
 ```bash
-# Install build tools
+# Prerequisites: macOS 14+, Xcode 15+, XcodeGen
 brew install xcodegen
 
 # Clone and build
 git clone https://github.com/bimbej/SmartTile.git
 cd SmartTile
 xcodegen generate
-open SmartTile.xcodeproj
-# Press Cmd+R in Xcode to build and run
+xcodebuild -scheme SmartTile -configuration Release build
 ```
 
 ### Set Up AI Model
@@ -77,6 +75,8 @@ brew install llama.cpp
 
 # The app will guide you through downloading the AI model (~1 GB) in Settings
 ```
+
+The grid overlay and fallback grid layout work without the AI model.
 
 ### Grant Permissions
 
@@ -93,6 +93,8 @@ This is required to discover and move windows.
 | `Ctrl+Option+A` | **Smart Arrange** — AI arranges all visible windows |
 | `Ctrl+Option+G` | **Grid Tile** — show grid overlay for the frontmost window |
 
+Shortcuts can be customized in Settings.
+
 ### Typical Workflow
 
 1. Open your usual apps (editor, browser, terminal...)
@@ -102,24 +104,16 @@ This is required to discover and move windows.
 
 No manual saving needed. SmartTile detects when you correct a layout and remembers the pattern.
 
-### How Learning Works
-
-SmartTile learns **layout patterns**, not per-app positions:
-
-- After Smart Arrange, it watches for ~30 seconds to see if you move any windows
-- If you adjust the layout, it saves the corrected arrangement as a template
-- Templates are keyed by window count (e.g., "my preferred 3-window layout")
-- Each slot in a template tracks which categories of apps go there
-- Over time, editors consistently land in the big slot, terminals in the small one, etc.
-
 ### Grid Overlay
 
 Press `Ctrl+Option+G` to open an interactive grid over your screen:
 
 - Click and drag to select cells for the frontmost window
 - Use `+`/`-` to change grid density
-- Quick presets at the bottom: Full, Half, Third, Two-thirds
+- Quick presets: Full, Left/Right ½, Top/Bottom ½, and four quarters
 - Press `Esc` to dismiss
+
+The grid covers the entire usable screen area — presets float on top without reducing the available grid space.
 
 ## Project Structure
 
@@ -128,11 +122,11 @@ SmartTile/
 ├── SmartTileApp.swift        # Entry point, NSStatusItem menu, global shortcuts
 ├── Models.swift              # Data structures, window categories
 ├── WindowManager.swift       # AXUIElement window discovery & manipulation
-├── LayoutEngine.swift        # Learned templates → LLM → grid fallback
-├── PreferenceAnalyzer.swift  # Template extraction, matching, slot assignment
+├── LayoutEngine.swift        # LLM layout + grid fallback (sqrt-based)
 ├── PreferenceStore.swift     # Template persistence + auto-learn polling
 ├── LocalModelManager.swift   # llama.cpp process management & model download
-├── OverlayView.swift         # Grid overlay UI
+├── UpdateChecker.swift       # GitHub release check + self-update
+├── OverlayView.swift         # Grid overlay UI (full-screen + floating presets)
 ├── SettingsView.swift        # Settings window
 ├── ToastView.swift           # Notification toasts (pure AppKit)
 ├── HotkeyManager.swift       # Global keyboard shortcut registration
@@ -149,7 +143,9 @@ SmartTile runs a small language model (Qwen 2.5 1.5B, ~1 GB) locally via `llama-
 - Screen dimensions and usable area
 - Instructions to arrange windows optimally, respecting window types
 
-The model's output is post-processed to ensure windows fill the entire screen. Over time, the AI is used less and less as SmartTile learns your preferences.
+The model output is post-processed with a 2D normalization algorithm that groups windows into rows and ensures full screen coverage. The grid fallback uses a sqrt-based algorithm (e.g., 4 windows = 2×2 grid, 6 windows = 3×2).
+
+Over time, the AI is used less and less as SmartTile learns your preferences.
 
 **No data leaves your computer.** The AI runs entirely locally.
 
@@ -168,4 +164,4 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## License
 
-[MIT](LICENSE) — Bim-IT Michal Zielinski © 2026
+[MIT](LICENSE) — Bim-IT Michał Zieliński © 2026

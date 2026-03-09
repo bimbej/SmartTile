@@ -75,7 +75,14 @@ class LayoutEngine {
         default:
             fallbackReason = "Grid layout (AI failed)"
         }
-        let cols = windows.count <= 3 ? windows.count : (windows.count <= 6 ? 3 : 4)
+        // Prefer row-based layouts: 2=2cols, 3=3cols, 4=2x2, 5=3+2, 6=3+3, 7=4+3, 8=4+4
+        let cols: Int
+        switch windows.count {
+        case 1: cols = 1
+        case 2: cols = 2
+        case 3: cols = 3
+        default: cols = Int(ceil(sqrt(Double(windows.count))))
+        }
         let grid = gridLayout(windows: windows, screen: screen, columns: cols, gap: settings.gapBetweenWindows)
 
         // Start auto-learn even for grid fallback
@@ -211,40 +218,61 @@ class LayoutEngine {
         """
     }
 
-    /// Normalize AI placements: preserve relative width ratios but fill the full screen.
+    /// Normalize AI placements to fill the screen.
+    /// Groups windows by row (similar Y), then distributes each row to fill width.
     private func normalizeToFillScreen(_ placements: [WindowPlacement], screen: ScreenInfo, gap: Double) -> [WindowPlacement] {
         guard !placements.isEmpty else { return placements }
 
-        let sorted = placements.sorted { $0.frame.x < $1.frame.x }
-        let totalAIWidth = sorted.map(\.frame.width).reduce(0, +)
-        guard totalAIWidth > 0 else { return placements }
+        // Group into rows by similar Y position (within 50px tolerance)
+        let sorted = placements.sorted { $0.frame.y < $1.frame.y }
+        var rows: [[WindowPlacement]] = []
+        var currentRow: [WindowPlacement] = []
+        var currentRowY = sorted[0].frame.y
 
-        let totalGaps = gap * Double(sorted.count + 1)
-        let availableWidth = screen.usableWidth - totalGaps
-        let fullHeight = screen.usableHeight - gap * 2
+        for p in sorted {
+            if abs(p.frame.y - currentRowY) > 50 {
+                rows.append(currentRow.sorted { $0.frame.x < $1.frame.x })
+                currentRow = [p]
+                currentRowY = p.frame.y
+            } else {
+                currentRow.append(p)
+            }
+        }
+        rows.append(currentRow.sorted { $0.frame.x < $1.frame.x })
+
+        let rowCount = rows.count
+        let rowHeight = (screen.usableHeight - gap * Double(rowCount + 1)) / Double(rowCount)
 
         var result: [WindowPlacement] = []
-        var currentX = screen.usableOriginX + gap
+        for (rowIdx, row) in rows.enumerated() {
+            let rowY = screen.usableOriginY + gap + Double(rowIdx) * (rowHeight + gap)
+            let totalAIWidth = row.map(\.frame.width).reduce(0, +)
+            guard totalAIWidth > 0 else { continue }
 
-        for (i, p) in sorted.enumerated() {
-            let ratio = p.frame.width / totalAIWidth
-            let newWidth: Double
-            if i == sorted.count - 1 {
-                newWidth = screen.usableOriginX + screen.usableWidth - gap - currentX
-            } else {
-                newWidth = availableWidth * ratio
+            let totalGaps = gap * Double(row.count + 1)
+            let availableWidth = screen.usableWidth - totalGaps
+            var currentX = screen.usableOriginX + gap
+
+            for (i, p) in row.enumerated() {
+                let ratio = p.frame.width / totalAIWidth
+                let newWidth: Double
+                if i == row.count - 1 {
+                    newWidth = screen.usableOriginX + screen.usableWidth - gap - currentX
+                } else {
+                    newWidth = availableWidth * ratio
+                }
+
+                result.append(WindowPlacement(
+                    windowID: p.windowID,
+                    frame: WindowFrame(
+                        x: currentX,
+                        y: rowY,
+                        width: newWidth,
+                        height: rowHeight
+                    )
+                ))
+                currentX += newWidth + gap
             }
-
-            result.append(WindowPlacement(
-                windowID: p.windowID,
-                frame: WindowFrame(
-                    x: currentX,
-                    y: screen.usableOriginY + gap,
-                    width: newWidth,
-                    height: fullHeight
-                )
-            ))
-            currentX += newWidth + gap
         }
 
         return result

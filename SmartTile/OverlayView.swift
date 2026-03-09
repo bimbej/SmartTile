@@ -26,6 +26,12 @@ class OverlayWindowController {
 
     /// Show overlay grid for the frontmost window
     func showForFrontWindow() {
+        guard WindowManager.hasAccessibilityPermission() else {
+            ToastController.shared.show("Grant Accessibility permission in System Settings", icon: "lock.fill")
+            WindowManager.requestAccessibilityPermission()
+            return
+        }
+
         let myBundleID = Bundle.main.bundleIdentifier ?? ""
         let windows = WindowManager.shared.getVisibleWindows()
             .filter { $0.bundleID != myBundleID }
@@ -127,46 +133,94 @@ struct GridOverlayView: View {
     
     var body: some View {
         ZStack {
-            // Background - click to dismiss
-            Color.black.opacity(0.01)
-                .onTapGesture { DispatchQueue.main.async { onDismiss() } }
-            
-            VStack(spacing: 16) {
-                // Header
+            // Grid fills entire screen
+            GeometryReader { geometry in
+                let cellWidth = geometry.size.width / CGFloat(columns)
+                let cellHeight = geometry.size.height / CGFloat(rows)
+
+                ZStack {
+                    // Grid cells
+                    ForEach(0..<rows, id: \.self) { row in
+                        ForEach(0..<columns, id: \.self) { col in
+                            let cell = GridCell(col: col, row: row)
+                            let isSelected = isCellInSelection(cell)
+
+                            Rectangle()
+                                .fill(isSelected ? Color.accentColor.opacity(0.4) : Color.white.opacity(0.05))
+                                .border(Color.white.opacity(0.2), width: 0.5)
+                                .frame(width: cellWidth, height: cellHeight)
+                                .position(
+                                    x: CGFloat(col) * cellWidth + cellWidth / 2,
+                                    y: CGFloat(row) * cellHeight + cellHeight / 2
+                                )
+                        }
+                    }
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let col = Int(value.location.x / cellWidth)
+                            let row = Int(value.location.y / cellHeight)
+                            let cell = GridCell(
+                                col: max(0, min(col, columns - 1)),
+                                row: max(0, min(row, rows - 1))
+                            )
+
+                            if dragStart == nil {
+                                dragStart = cell
+                            }
+                            dragEnd = cell
+                        }
+                        .onEnded { _ in
+                            if let start = dragStart, let end = dragEnd {
+                                let frame = selectionToFrame(
+                                    start: start, end: end
+                                )
+                                DispatchQueue.main.async {
+                                    onSelect(frame)
+                                }
+                            }
+                            dragStart = nil
+                            dragEnd = nil
+                        }
+                )
+            }
+
+            // Header floating on top
+            VStack {
                 HStack {
                     Text("SmartTile")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundColor(.white)
-                    
+
                     Text("— \(windowName)")
                         .font(.system(size: 14))
                         .foregroundColor(.white.opacity(0.7))
                         .lineLimit(1)
-                    
+
                     Spacer()
-                    
-                    // Grid size controls
+
                     HStack(spacing: 8) {
                         Text("Grid:")
                             .foregroundColor(.white.opacity(0.7))
-                        
+
                         Button(action: { if columns > 2 { columns -= 1 } }) {
                             Image(systemName: "minus.circle")
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.white)
-                        
+
                         Text("\(columns)×\(rows)")
                             .foregroundColor(.white)
                             .monospacedDigit()
-                        
+
                         Button(action: { if columns < 12 { columns += 1 } }) {
                             Image(systemName: "plus.circle")
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.white)
                     }
-                    
+
                     Button("ESC") {
                         onDismiss()
                     }
@@ -178,93 +232,59 @@ struct GridOverlayView: View {
                     .cornerRadius(4)
                 }
                 .padding(.horizontal, 20)
-                
-                // Grid
-                GeometryReader { geometry in
-                    let cellWidth = geometry.size.width / CGFloat(columns)
-                    let cellHeight = geometry.size.height / CGFloat(rows)
-                    
-                    ZStack {
-                        // Grid cells
-                        ForEach(0..<rows, id: \.self) { row in
-                            ForEach(0..<columns, id: \.self) { col in
-                                let cell = GridCell(col: col, row: row)
-                                let isSelected = isCellInSelection(cell)
-                                
-                                Rectangle()
-                                    .fill(isSelected ? Color.accentColor.opacity(0.4) : Color.white.opacity(0.05))
-                                    .border(Color.white.opacity(0.2), width: 0.5)
-                                    .frame(width: cellWidth, height: cellHeight)
-                                    .position(
-                                        x: CGFloat(col) * cellWidth + cellWidth / 2,
-                                        y: CGFloat(row) * cellHeight + cellHeight / 2
-                                    )
-                            }
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+                .background(
+                    LinearGradient(colors: [Color.black.opacity(0.6), Color.black.opacity(0)],
+                                   startPoint: .top, endPoint: .bottom)
+                )
+                .allowsHitTesting(true)
+
+                Spacer()
+
+                // Quick presets floating at bottom
+                VStack(spacing: 8) {
+                    HStack(spacing: 12) {
+                        PresetButton(label: "Full", icon: "rectangle.fill") {
+                            let f = fullFrame(); DispatchQueue.main.async { onSelect(f) }
+                        }
+                        PresetButton(label: "Left ½", icon: "rectangle.lefthalf.filled") {
+                            let f = halfFrame(left: true); DispatchQueue.main.async { onSelect(f) }
+                        }
+                        PresetButton(label: "Right ½", icon: "rectangle.righthalf.filled") {
+                            let f = halfFrame(left: false); DispatchQueue.main.async { onSelect(f) }
+                        }
+                        PresetButton(label: "Top ½", icon: "rectangle.tophalf.filled") {
+                            let f = topBottomFrame(top: true); DispatchQueue.main.async { onSelect(f) }
+                        }
+                        PresetButton(label: "Bottom ½", icon: "rectangle.bottomhalf.filled") {
+                            let f = topBottomFrame(top: false); DispatchQueue.main.async { onSelect(f) }
                         }
                     }
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                let col = Int(value.location.x / cellWidth)
-                                let row = Int(value.location.y / cellHeight)
-                                let cell = GridCell(
-                                    col: max(0, min(col, columns - 1)),
-                                    row: max(0, min(row, rows - 1))
-                                )
-                                
-                                if dragStart == nil {
-                                    dragStart = cell
-                                }
-                                dragEnd = cell
-                            }
-                            .onEnded { _ in
-                                if let start = dragStart, let end = dragEnd {
-                                    let frame = selectionToFrame(
-                                        start: start, end: end
-                                    )
-                                    // Defer to escape the gesture handler's stack frame
-                                    DispatchQueue.main.async {
-                                        onSelect(frame)
-                                    }
-                                }
-                                dragStart = nil
-                                dragEnd = nil
-                            }
-                    )
+                    HStack(spacing: 12) {
+                        PresetButton(label: "Top Left", icon: "rectangle.inset.topleft.filled") {
+                            let f = quarterFrame(left: true, top: true); DispatchQueue.main.async { onSelect(f) }
+                        }
+                        PresetButton(label: "Top Right", icon: "rectangle.inset.topright.filled") {
+                            let f = quarterFrame(left: false, top: true); DispatchQueue.main.async { onSelect(f) }
+                        }
+                        PresetButton(label: "Bottom Left", icon: "rectangle.inset.bottomleft.filled") {
+                            let f = quarterFrame(left: true, top: false); DispatchQueue.main.async { onSelect(f) }
+                        }
+                        PresetButton(label: "Bottom Right", icon: "rectangle.inset.bottomright.filled") {
+                            let f = quarterFrame(left: false, top: false); DispatchQueue.main.async { onSelect(f) }
+                        }
+                    }
                 }
+                .padding(.vertical, 12)
                 .padding(.horizontal, 20)
-                .padding(.bottom, 20)
-                
-                // Quick presets
-                HStack(spacing: 12) {
-                    PresetButton(label: "Full", icon: "rectangle.fill") {
-                        let f = fullFrame(); DispatchQueue.main.async { onSelect(f) }
-                    }
-                    PresetButton(label: "Left ½", icon: "rectangle.lefthalf.filled") {
-                        let f = halfFrame(left: true); DispatchQueue.main.async { onSelect(f) }
-                    }
-                    PresetButton(label: "Right ½", icon: "rectangle.righthalf.filled") {
-                        let f = halfFrame(left: false); DispatchQueue.main.async { onSelect(f) }
-                    }
-                    PresetButton(label: "Left ⅓", icon: "rectangle.split.3x1") {
-                        let f = thirdFrame(position: 0); DispatchQueue.main.async { onSelect(f) }
-                    }
-                    PresetButton(label: "Center ⅓", icon: "rectangle.center.inset.filled") {
-                        let f = thirdFrame(position: 1); DispatchQueue.main.async { onSelect(f) }
-                    }
-                    PresetButton(label: "Right ⅓", icon: "rectangle.split.3x1") {
-                        let f = thirdFrame(position: 2); DispatchQueue.main.async { onSelect(f) }
-                    }
-                    PresetButton(label: "Left ⅔", icon: "rectangle.leftthird.inset.filled") {
-                        let f = twoThirdsFrame(left: true); DispatchQueue.main.async { onSelect(f) }
-                    }
-                    PresetButton(label: "Right ⅔", icon: "rectangle.rightthird.inset.filled") {
-                        let f = twoThirdsFrame(left: false); DispatchQueue.main.async { onSelect(f) }
-                    }
-                }
-                .padding(.bottom, 16)
+                .background(
+                    LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.6)],
+                                   startPoint: .top, endPoint: .bottom)
+                )
+                .allowsHitTesting(true)
             }
-            .padding(.top, 16)
+            .allowsHitTesting(false)
         }
     }
     
@@ -318,26 +338,26 @@ struct GridOverlayView: View {
         )
     }
     
-    private func thirdFrame(position: Int) -> WindowFrame {
+    private func topBottomFrame(top: Bool) -> WindowFrame {
         let gap = 8.0
-        let thirdWidth = (screenInfo.usableWidth - gap * 4) / 3
+        let halfHeight = (screenInfo.usableHeight - gap * 3) / 2
         return WindowFrame(
-            x: screenInfo.usableOriginX + gap + Double(position) * (thirdWidth + gap),
-            y: screenInfo.usableOriginY + gap,
-            width: thirdWidth,
-            height: screenInfo.usableHeight - gap * 2
+            x: screenInfo.usableOriginX + gap,
+            y: screenInfo.usableOriginY + (top ? gap : halfHeight + gap * 2),
+            width: screenInfo.usableWidth - gap * 2,
+            height: halfHeight
         )
     }
-    
-    private func twoThirdsFrame(left: Bool) -> WindowFrame {
+
+    private func quarterFrame(left: Bool, top: Bool) -> WindowFrame {
         let gap = 8.0
-        let twoThirdsWidth = (screenInfo.usableWidth - gap * 4) / 3 * 2 + gap
-        let oneThirdWidth = (screenInfo.usableWidth - gap * 4) / 3
+        let halfWidth = (screenInfo.usableWidth - gap * 3) / 2
+        let halfHeight = (screenInfo.usableHeight - gap * 3) / 2
         return WindowFrame(
-            x: screenInfo.usableOriginX + (left ? gap : oneThirdWidth + gap * 2),
-            y: screenInfo.usableOriginY + gap,
-            width: twoThirdsWidth,
-            height: screenInfo.usableHeight - gap * 2
+            x: screenInfo.usableOriginX + (left ? gap : halfWidth + gap * 2),
+            y: screenInfo.usableOriginY + (top ? gap : halfHeight + gap * 2),
+            width: halfWidth,
+            height: halfHeight
         )
     }
 }

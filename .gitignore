@@ -33,3 +33,7 @@ PROMPT.md
 last_llama_output.txt
 last_layout_debug.txt
 last_apply_debug.txt
+last_prompt.txt
+
+# Release artifacts
+*.dmg
