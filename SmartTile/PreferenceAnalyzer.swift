@@ -43,11 +43,29 @@ class PreferenceAnalyzer {
 
     // MARK: - Find best template for N windows
 
-    /// Find the most-used template for a given window count.
+    /// Find the best template for a given window count.
+    /// Priority: exact match → closest larger (has room) → closest smaller (extras split in).
     static func bestTemplate(for windowCount: Int, from templates: [LayoutTemplate]) -> LayoutTemplate? {
+        // Exact match — preferred
         let exact = templates.filter { $0.windowCount == windowCount }
             .sorted { $0.useCount > $1.useCount }
-        return exact.first
+        if let best = exact.first { return best }
+
+        // Closest larger template — already has enough slots for all windows
+        let larger = templates.filter { $0.windowCount > windowCount }
+            .sorted { a, b in
+                if a.windowCount != b.windowCount { return a.windowCount < b.windowCount }
+                return a.useCount > b.useCount
+            }
+        if let best = larger.first { return best }
+
+        // Closest smaller template (at least 2 slots) — known windows keep positions, extras split in
+        let smaller = templates.filter { $0.windowCount < windowCount && $0.windowCount >= 2 }
+            .sorted { a, b in
+                if a.windowCount != b.windowCount { return a.windowCount > b.windowCount }
+                return a.useCount > b.useCount
+            }
+        return smaller.first
     }
 
     // MARK: - Apply template to windows
@@ -74,22 +92,33 @@ class PreferenceAnalyzer {
             ))
         }
 
-        // If more windows than slots, stack remaining in the last slot area
+        // If more windows than slots, split the lowest-priority assigned slot
         let assignedWindowIdxs = Set(assignments.map(\.1))
         let unassigned = windows.indices.filter { !assignedWindowIdxs.contains($0) }
-        if !unassigned.isEmpty, let lastSlot = template.slots.last {
-            let slotH = (lastSlot.height * screen.usableHeight - gap * 2) / Double(unassigned.count + 1)
-            for (j, windowIdx) in unassigned.enumerated() {
-                placements.append(WindowPlacement(
-                    windowID: windows[windowIdx].id,
-                    frame: WindowFrame(
-                        x: screen.usableOriginX + lastSlot.x * screen.usableWidth + gap,
-                        y: screen.usableOriginY + lastSlot.y * screen.usableHeight + gap + Double(j + 1) * slotH,
-                        width: lastSlot.width * screen.usableWidth - gap * 2,
-                        height: slotH - gap
-                    )
-                ))
-            }
+            .sorted { windows[$0].category.priority < windows[$1].category.priority }
+
+        for windowIdx in unassigned {
+            // Find the slot with the lowest-priority window that has the most height to split
+            guard let splitIdx = placements.indices
+                .sorted(by: { placements[$0].frame.height > placements[$1].frame.height })
+                .first(where: { idx in
+                    let wid = placements[idx].windowID
+                    let cat = windows.first(where: { $0.id == wid })?.category ?? .other
+                    return cat.priority <= windows[windowIdx].category.priority || placements[idx].frame.height > 200
+                }) ?? placements.indices.max(by: { placements[$0].frame.height < placements[$1].frame.height })
+            else { break }
+
+            // Split the slot vertically: existing window gets top half, new window gets bottom half
+            let original = placements[splitIdx].frame
+            let halfH = (original.height - gap) / 2
+            placements[splitIdx] = WindowPlacement(
+                windowID: placements[splitIdx].windowID,
+                frame: WindowFrame(x: original.x, y: original.y, width: original.width, height: halfH)
+            )
+            placements.append(WindowPlacement(
+                windowID: windows[windowIdx].id,
+                frame: WindowFrame(x: original.x, y: original.y + halfH + gap, width: original.width, height: halfH)
+            ))
         }
 
         return placements

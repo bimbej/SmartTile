@@ -100,9 +100,9 @@ Shortcuts can be customized in Settings.
 1. Open your usual apps (editor, browser, terminal...)
 2. Press `Ctrl+Option+A` — SmartTile arranges them
 3. Not happy? Adjust windows manually — **SmartTile learns automatically**
-4. Next time you have the same number of windows, your preferred layout is restored
+4. Next time, your preferred layout is restored — even if you add or remove windows
 
-No manual saving needed. SmartTile detects when you correct a layout and remembers the pattern.
+No manual saving needed. SmartTile detects when you correct a layout and remembers the pattern. Templates are flexible — if no exact match exists for your window count, SmartTile picks the closest saved template and adapts it (extra slots stay empty, or extra windows split into existing slots).
 
 ### Grid Overlay
 
