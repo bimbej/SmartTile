@@ -6,12 +6,18 @@ import AppKit
 /// NSWindow subclass that handles ESC key to dismiss the overlay
 class OverlayNSWindow: NSWindow {
     var onEscape: (() -> Void)?
+    var onPlus: (() -> Void)?
+    var onMinus: (() -> Void)?
 
     override var canBecomeKey: Bool { true }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { // ESC
             onEscape?()
+        } else if event.characters == "+" || event.characters == "=" {
+            onPlus?()
+        } else if event.characters == "-" {
+            onMinus?()
         } else {
             super.keyDown(with: event)
         }
@@ -83,6 +89,8 @@ class OverlayWindowController {
         nsWindow.contentView = contentView
         nsWindow.ignoresMouseEvents = false
         nsWindow.onEscape = { [weak self] in self?.dismiss() }
+        nsWindow.onPlus = { NotificationCenter.default.post(name: .gridOverlayPlus, object: nil) }
+        nsWindow.onMinus = { NotificationCenter.default.post(name: .gridOverlayMinus, object: nil) }
         nsWindow.makeKeyAndOrderFront(nil)
 
         // Activate our app so the window can receive key events
@@ -119,7 +127,7 @@ struct GridOverlayView: View {
     let windowName: String
     let onSelect: (WindowFrame) -> Void
     let onDismiss: () -> Void
-    
+
     @State private var columns: Int = 6
     @State private var rows: Int = 3
     @State private var dragStart: GridCell? = nil
@@ -287,8 +295,14 @@ struct GridOverlayView: View {
                 )
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .gridOverlayPlus)) { _ in
+            if columns < 12 { columns += 1 }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gridOverlayMinus)) { _ in
+            if columns > 2 { columns -= 1 }
+        }
     }
-    
+
     // MARK: - Selection Logic
     
     private func isCellInSelection(_ cell: GridCell) -> Bool {
@@ -385,4 +399,11 @@ struct PresetButton: View {
         }
         .buttonStyle(.plain)
     }
+}
+
+// MARK: - Notification Names
+
+extension Notification.Name {
+    static let gridOverlayPlus = Notification.Name("gridOverlayPlus")
+    static let gridOverlayMinus = Notification.Name("gridOverlayMinus")
 }

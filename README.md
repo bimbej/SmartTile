@@ -102,7 +102,7 @@ Shortcuts can be customized in Settings.
 3. Not happy? Adjust windows manually — **SmartTile learns automatically**
 4. Next time, your preferred layout is restored — even if you add or remove windows
 
-No manual saving needed. SmartTile detects when you correct a layout and remembers the pattern. Templates are flexible — if no exact match exists for your window count, SmartTile picks the closest saved template and adapts it (extra slots stay empty, or extra windows split into existing slots).
+No manual saving needed. SmartTile detects when you correct a layout and remembers the pattern. Templates are flexible — if no exact match exists for your window count, SmartTile picks the closest saved template and adapts it (extra slots stay empty, or extra windows split into existing slots). Templates are screen-aware — layouts learned on a standard screen won't be applied on an ultrawide and vice versa.
 
 ### Grid Overlay
 
