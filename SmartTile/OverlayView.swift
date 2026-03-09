@@ -186,7 +186,7 @@ struct GridOverlayView: View {
                 )
             }
 
-            // Header floating on top
+            // Header at top — separate from presets so each gets its own hit testing
             VStack {
                 HStack {
                     Text("SmartTile")
@@ -238,11 +238,14 @@ struct GridOverlayView: View {
                     LinearGradient(colors: [Color.black.opacity(0.6), Color.black.opacity(0)],
                                    startPoint: .top, endPoint: .bottom)
                 )
-                .allowsHitTesting(true)
 
                 Spacer()
+            }
 
-                // Quick presets floating at bottom
+            // Quick presets at bottom
+            VStack {
+                Spacer()
+
                 VStack(spacing: 8) {
                     HStack(spacing: 12) {
                         PresetButton(label: "Full", icon: "rectangle.fill") {
@@ -282,9 +285,7 @@ struct GridOverlayView: View {
                     LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.6)],
                                    startPoint: .top, endPoint: .bottom)
                 )
-                .allowsHitTesting(true)
             }
-            .allowsHitTesting(false)
         }
     }
     
