@@ -24,9 +24,9 @@ class PreferenceStore {
 
     // MARK: - Template Matching
 
-    /// Find the best template for the given number of windows.
-    func bestTemplate(for windowCount: Int) -> PreferenceAnalyzer.LayoutTemplate? {
-        PreferenceAnalyzer.bestTemplate(for: windowCount, from: templates)
+    /// Find the best template for the given number of windows and current screen.
+    func bestTemplate(for windowCount: Int, screen: ScreenInfo? = nil) -> PreferenceAnalyzer.LayoutTemplate? {
+        PreferenceAnalyzer.bestTemplate(for: windowCount, from: templates, screen: screen)
     }
 
     // MARK: - Learning

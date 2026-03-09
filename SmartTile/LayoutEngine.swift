@@ -13,7 +13,7 @@ class LayoutEngine {
         preferenceStore.stopAutoLearn()
 
         // 1. Try learned template (matches by window count)
-        if let template = preferenceStore.bestTemplate(for: windows.count) {
+        if let template = preferenceStore.bestTemplate(for: windows.count, screen: screen) {
             NSLog("SmartTile: Using learned template for %d windows (used %dx)", windows.count, template.useCount)
             let placements = PreferenceAnalyzer.applyTemplate(template, to: windows, screen: screen, gap: settings.gapBetweenWindows)
             let proposal = LayoutProposal(windows: placements, reasoning: "Learned layout for \(windows.count) windows")
