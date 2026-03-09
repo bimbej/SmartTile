@@ -5,6 +5,17 @@ import Foundation
 /// Each slot tracks which categories have been placed there, enabling smart assignment.
 class PreferenceAnalyzer {
 
+    /// Screen aspect ratio class — templates only match screens of the same class
+    enum ScreenClass: String, Codable {
+        case standard   // 16:10, 16:9 and similar (ratio < 2.0)
+        case ultrawide  // 21:9, 32:9 and wider (ratio >= 2.0)
+
+        static func from(screen: ScreenInfo) -> ScreenClass {
+            let ratio = screen.usableWidth / max(screen.usableHeight, 1)
+            return ratio >= 2.0 ? .ultrawide : .standard
+        }
+    }
+
     /// A slot in a layout template (relative to screen)
     struct Slot: Codable {
         let x: Double    // 0.0–1.0 fraction of usable width
@@ -21,6 +32,7 @@ class PreferenceAnalyzer {
         let windowCount: Int
         let slots: [Slot]       // order preserved from first save
         var useCount: Int
+        let screenClass: ScreenClass?  // nil for legacy templates (treated as matching any)
     }
 
     // MARK: - Extract template from a concrete layout
@@ -38,21 +50,31 @@ class PreferenceAnalyzer {
                 categoryCounts: [cat.rawValue: 1]
             )
         }
-        return LayoutTemplate(windowCount: placements.count, slots: slots, useCount: 1)
+        return LayoutTemplate(windowCount: placements.count, slots: slots, useCount: 1,
+                              screenClass: ScreenClass.from(screen: screen))
     }
 
     // MARK: - Find best template for N windows
 
-    /// Find the best template for a given window count.
+    /// Find the best template for a given window count and screen.
     /// Priority: exact match → closest larger (has room) → closest smaller (extras split in).
-    static func bestTemplate(for windowCount: Int, from templates: [LayoutTemplate]) -> LayoutTemplate? {
+    /// Only considers templates matching the current screen class (or legacy templates with nil screenClass).
+    static func bestTemplate(for windowCount: Int, from templates: [LayoutTemplate],
+                              screen: ScreenInfo? = nil) -> LayoutTemplate? {
+        let currentClass = screen.map { ScreenClass.from(screen: $0) }
+        // Filter by screen class — nil (legacy) templates match any screen
+        let compatible = templates.filter { t in
+            guard let currentClass else { return true }
+            return t.screenClass == nil || t.screenClass == currentClass
+        }
+
         // Exact match — preferred
-        let exact = templates.filter { $0.windowCount == windowCount }
+        let exact = compatible.filter { $0.windowCount == windowCount }
             .sorted { $0.useCount > $1.useCount }
         if let best = exact.first { return best }
 
         // Closest larger template — already has enough slots for all windows
-        let larger = templates.filter { $0.windowCount > windowCount }
+        let larger = compatible.filter { $0.windowCount > windowCount }
             .sorted { a, b in
                 if a.windowCount != b.windowCount { return a.windowCount < b.windowCount }
                 return a.useCount > b.useCount
@@ -60,7 +82,7 @@ class PreferenceAnalyzer {
         if let best = larger.first { return best }
 
         // Closest smaller template (at least 2 slots) — known windows keep positions, extras split in
-        let smaller = templates.filter { $0.windowCount < windowCount && $0.windowCount >= 2 }
+        let smaller = compatible.filter { $0.windowCount < windowCount && $0.windowCount >= 2 }
             .sorted { a, b in
                 if a.windowCount != b.windowCount { return a.windowCount > b.windowCount }
                 return a.useCount > b.useCount
@@ -171,6 +193,8 @@ class PreferenceAnalyzer {
     /// Check if two templates are structurally similar (same general arrangement).
     static func areSimilar(_ a: LayoutTemplate, _ b: LayoutTemplate, tolerance: Double = 0.15) -> Bool {
         guard a.windowCount == b.windowCount, a.slots.count == b.slots.count else { return false }
+        // Different screen classes are never similar
+        if let ac = a.screenClass, let bc = b.screenClass, ac != bc { return false }
         // Sort both by position for stable comparison
         let slotsA = a.slots.sorted { $0.x + $0.y * 100 < $1.x + $1.y * 100 }
         let slotsB = b.slots.sorted { $0.x + $0.y * 100 < $1.x + $1.y * 100 }
@@ -202,7 +226,8 @@ class PreferenceAnalyzer {
             )
         }
         existing = LayoutTemplate(windowCount: existing.windowCount, slots: existingSorted,
-                                   useCount: existing.useCount + 1)
+                                   useCount: existing.useCount + 1,
+                                   screenClass: existing.screenClass ?? new.screenClass)
     }
 
     private static func clamp(_ v: Double) -> Double { min(1, max(0, v)) }
