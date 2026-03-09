@@ -109,7 +109,7 @@ struct SettingsView: View {
                 HStack {
                     Text("SmartTile")
                         .fontWeight(.semibold)
-                    Text("v0.1.0")
+                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
                         .foregroundStyle(.secondary)
                     Spacer()
                 }

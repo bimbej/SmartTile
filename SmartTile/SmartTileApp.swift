@@ -87,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showAccessibilityOnboarding() {
         WindowManager.requestAccessibilityPermission()
         appState.lastResult = "Waiting for Accessibility permission..."
+        ToastController.shared.show("Grant Accessibility permission to enable keyboard shortcuts", icon: "lock.fill", duration: 5)
         startAccessibilityPolling()
     }
 
