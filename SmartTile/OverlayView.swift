@@ -128,8 +128,7 @@ struct GridOverlayView: View {
     let onSelect: (WindowFrame) -> Void
     let onDismiss: () -> Void
 
-    @State private var columns: Int = 6
-    @State private var rows: Int = 3
+    @State private var density: Int = 3  // density level: columns = density * 2, rows = density
     @State private var dragStart: GridCell? = nil
     @State private var dragEnd: GridCell? = nil
     @State private var hoveredCell: GridCell? = nil
@@ -138,7 +137,16 @@ struct GridOverlayView: View {
         let col: Int
         let row: Int
     }
-    
+
+    /// Columns and rows scale together based on screen aspect ratio
+    private var columns: Int {
+        let aspect = screenInfo.usableWidth / max(screenInfo.usableHeight, 1)
+        // For 16:10 (~1.6) → ratio ~2, for 21:9 (~2.3) → ratio ~2-3
+        let colsPerDensity = max(2, Int(round(aspect)))
+        return density * colsPerDensity
+    }
+    private var rows: Int { density }
+
     var body: some View {
         ZStack {
             // Grid fills entire screen
@@ -212,7 +220,7 @@ struct GridOverlayView: View {
                         Text("Grid:")
                             .foregroundColor(.white.opacity(0.7))
 
-                        Button(action: { if columns > 2 { columns -= 1 } }) {
+                        Button(action: { if density > 1 { density -= 1 } }) {
                             Image(systemName: "minus.circle")
                         }
                         .buttonStyle(.plain)
@@ -222,7 +230,7 @@ struct GridOverlayView: View {
                             .foregroundColor(.white)
                             .monospacedDigit()
 
-                        Button(action: { if columns < 12 { columns += 1 } }) {
+                        Button(action: { if density < 6 { density += 1 } }) {
                             Image(systemName: "plus.circle")
                         }
                         .buttonStyle(.plain)
@@ -296,10 +304,10 @@ struct GridOverlayView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .gridOverlayPlus)) { _ in
-            if columns < 12 { columns += 1 }
+            if density < 6 { density += 1 }
         }
         .onReceive(NotificationCenter.default.publisher(for: .gridOverlayMinus)) { _ in
-            if columns > 2 { columns -= 1 }
+            if density > 1 { density -= 1 }
         }
     }
 
