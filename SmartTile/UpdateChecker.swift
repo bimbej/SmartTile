@@ -203,13 +203,13 @@ final class UpdateChecker {
 
     private func relaunch() {
         let appPath = "/Applications/SmartTile.app"
+        // Terminate first, then open — avoids two instances running simultaneously
+        let script = "sleep 1 && open \"\(appPath)\""
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        task.arguments = ["-n", appPath]
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", script]
         try? task.run()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            NSApp.terminate(nil)
-        }
+        NSApp.terminate(nil)
     }
 }
