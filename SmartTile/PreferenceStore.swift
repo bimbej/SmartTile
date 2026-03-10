@@ -13,6 +13,7 @@ class PreferenceStore {
     private var lastAppliedLayout: [WindowPlacement]?
     private var lastAppliedWindows: [WindowInfo]?
     private var autoLearnTimer: Timer?
+    private var gridLearnTimer: Timer?
 
     init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -120,6 +121,27 @@ class PreferenceStore {
     func stopAutoLearn() {
         autoLearnTimer?.invalidate()
         autoLearnTimer = nil
+    }
+
+    // MARK: - Grid Learn
+
+    /// Called after each grid placement. Debounces — waits 10 seconds of inactivity
+    /// then snapshots all visible windows and learns the layout.
+    func scheduleGridLearn() {
+        gridLearnTimer?.invalidate()
+        gridLearnTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            let windows = WindowManager.shared.getVisibleWindows()
+                .filter { $0.bundleID != Bundle.main.bundleIdentifier }
+            guard windows.count >= 2 else { return }
+
+            let placements = windows.map { WindowPlacement(windowID: $0.id, frame: $0.frame) }
+            let screen = ScreenInfo.current()
+            self.learnLayout(windows: windows, layout: placements, screen: screen)
+            DispatchQueue.main.async {
+                ToastController.shared.show("Layout learned", icon: "brain.head.profile", duration: 2)
+            }
+        }
     }
 
     // MARK: - Helpers

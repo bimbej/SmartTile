@@ -107,6 +107,9 @@ class OverlayWindowController {
             frame: frame
         )
         dismiss()
+
+        // Schedule learning from current layout after user is done arranging
+        PreferenceStore.shared.scheduleGridLearn()
     }
 
     func dismiss() {
